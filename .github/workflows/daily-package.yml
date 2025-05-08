@@ -1,0 +1,233 @@
+name: Daily Zed Pre-release Packaging
+
+on:
+  schedule:
+    - cron: "0 0 */3 * *" # Run every third day at midnight UTC
+  workflow_dispatch: # Allow manual triggering
+
+permissions:
+  contents: write
+
+jobs:
+  package-zed:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq dpkg-dev fakeroot
+
+      - name: Get latest pre-release
+        id: get_release
+        run: |
+          LATEST_PRERELEASE=$(curl -s https://api.github.com/repos/zed-industries/zed/releases | jq '.[] | select(.prerelease==true) | .tag_name' | head -n 1 | tr -d '"')
+          echo "LATEST_PRERELEASE=$LATEST_PRERELEASE" >> $GITHUB_ENV
+          echo "Found latest pre-release: $LATEST_PRERELEASE"
+
+          # Get the latest release from this repo
+          LATEST_REPO_RELEASE=$(curl -s https://api.github.com/repos/lucasliet/zed-deb/releases/latest | jq -r '.tag_name // empty')
+          echo "Latest repo release: $LATEST_REPO_RELEASE"
+
+          # Set SHOULD_BUILD flag
+          if [ -z "$LATEST_REPO_RELEASE" ]; then
+            # No releases in the repo yet, we should build
+            echo "SHOULD_BUILD=true" >> $GITHUB_ENV
+            echo "No existing releases found. Will build new package."
+          elif [ "$LATEST_REPO_RELEASE" != "$LATEST_PRERELEASE" ]; then
+            # Compare versions without the 'v' prefix
+            ZED_VER="${LATEST_PRERELEASE#v}"
+            REPO_VER="${LATEST_REPO_RELEASE#v}"
+
+            # Use sort -V for version comparison
+            if [ "$(printf '%s\n' "$REPO_VER" "$ZED_VER" | sort -V | head -n1)" != "$ZED_VER" ]; then
+              # ZED_VER is newer than REPO_VER
+              echo "SHOULD_BUILD=true" >> $GITHUB_ENV
+              echo "New version found: $ZED_VER > $REPO_VER. Will build new package."
+            else
+              echo "SHOULD_BUILD=false" >> $GITHUB_ENV
+              echo "No new version found. Skipping build."
+            fi
+          else
+            echo "SHOULD_BUILD=false" >> $GITHUB_ENV
+            echo "Version $LATEST_PRERELEASE already built. Skipping build."
+          fi
+
+      - name: Download and Package Linux Assets
+        if: ${{ env.SHOULD_BUILD == 'true' }}
+        run: |
+          mkdir -p temp_download
+          cd temp_download
+
+          # Get download URLs for Linux assets
+          RELEASE_JSON=$(curl -s "https://api.github.com/repos/zed-industries/zed/releases/tags/$LATEST_PRERELEASE")
+          DOWNLOAD_URLS=$(echo "$RELEASE_JSON" | jq '.assets[] | select(.name | contains("zed-linux-")) | .browser_download_url' | tr -d '"')
+
+          # Create array to store package filenames
+          PACKAGES=()
+          VERSION=${LATEST_PRERELEASE#v}
+
+          # Download and process each Linux asset
+          for URL in $DOWNLOAD_URLS; do
+            echo "Downloading $URL"
+            curl -L -O $URL
+          done
+
+          for FILE in zed-linux-*; do
+            if [[ ! -f "$FILE" ]]; then
+              echo "No matching files found to extract"
+              exit 1
+            fi
+
+            echo "Processing file: $FILE"
+
+            # Clean extraction directories for this file
+            rm -rf ../temp_extract ../app_extract
+            mkdir -p ../temp_extract
+            mkdir -p ../app_extract
+
+            if [[ $FILE == *.tar.gz ]]; then
+              echo "Extracting tar.gz file..."
+              tar -xzf "$FILE" -C ../temp_extract
+            elif [[ $FILE == *.zip ]]; then
+              echo "Extracting zip file..."
+              unzip "$FILE" -d ../temp_extract
+            fi
+
+            # Get directory name from the original file (removing extension)
+            DIRNAME="${FILE%.tar.gz}"
+            DIRNAME="${DIRNAME%.zip}"
+
+            cd ../temp_extract
+            echo "Looking for extracted content in temp_extract directory..."
+            ls -la
+
+            # Try to find the extracted directory
+            FOUND_DIR=""
+            if [ -d "$DIRNAME" ]; then
+              FOUND_DIR="$DIRNAME"
+            else
+              # If exact name not found, look for any directory
+              FOUND_DIR=$(find . -maxdepth 1 -type d | grep -v "^\.$" | head -1)
+              FOUND_DIR="${FOUND_DIR#./}"
+            fi
+
+            if [ -n "$FOUND_DIR" ] && [ -d "$FOUND_DIR" ]; then
+              echo "Found extracted directory: $FOUND_DIR"
+              echo "Moving extracted files to app_extract directory"
+              cp -r "$FOUND_DIR"/* ../app_extract/
+            else
+              echo "Error: Could not find extracted directory. Check if extraction worked properly."
+              ls -la
+              exit 1
+            fi
+
+            # Verify app_extract has content
+            cd ..
+            echo "Verifying app_extract directory contents:"
+            ls -la app_extract
+            if [ ! "$(ls -A app_extract)" ]; then
+              echo "Error: app_extract directory is empty. Extraction failed."
+              exit 1
+            fi
+
+            # Determine architecture from the file name
+            ARCH="amd64"  # Default architecture
+            if [[ "$FILE" == *"aarch64"* ]]; then
+              ARCH="arm64"
+            elif [[ "$FILE" == *"x86_64"* ]]; then
+              ARCH="amd64"
+            fi
+            echo "Detected architecture: $ARCH"
+
+            # Create package structure
+            mkdir -p zed-deb-pkg/DEBIAN
+            mkdir -p zed-deb-pkg/usr/bin
+            mkdir -p zed-deb-pkg/usr/lib/zed
+            mkdir -p zed-deb-pkg/usr/share/applications
+            mkdir -p zed-deb-pkg/usr/share/icons/hicolor/512x512/apps
+
+            # Create control file
+            cat > zed-deb-pkg/DEBIAN/control << EOF
+          Package: zed-preview
+          Version: ${VERSION}
+          Section: editors
+          Priority: optional
+          Architecture: ${ARCH}
+          Maintainer: Zed Industries <support@zed.dev>
+          Description: Zed Editor Preview
+           A high-performance, multiplayer code editor from the creators of Atom and Tree-sitter.
+          EOF
+
+            # Copy application files from the extracted directory
+            echo "Copying application files to package"
+            ls -la app_extract/
+            cp -r app_extract/* zed-deb-pkg/usr/lib/zed/ || { echo "Error copying files from app_extract to package"; exit 1; }
+
+            # Create launcher script
+            cat > zed-deb-pkg/usr/bin/zed-preview << EOF
+          #!/bin/sh
+          exec /usr/lib/zed/bin/zed "\$@"
+          EOF
+            chmod +x zed-deb-pkg/usr/bin/zed-preview
+
+            # Create desktop file
+            cat > zed-deb-pkg/usr/share/applications/zed-preview.desktop << EOF
+          [Desktop Entry]
+          Name=Zed Preview
+          Comment=High-performance, multiplayer code editor
+          Exec=/usr/bin/zed-preview %F
+          Icon=zed-preview
+          Terminal=false
+          Type=Application
+          Categories=Development;TextEditor;
+          MimeType=text/plain;
+          EOF
+
+            # Extract icon from app if available, or use a placeholder
+            if [ -f "app_extract/share/icons/hicolor/512x512/apps/zed.png" ]; then
+              cp "app_extract/share/icons/hicolor/512x512/apps/zed.png" zed-deb-pkg/usr/share/icons/hicolor/512x512/apps/zed-preview.png
+            fi
+
+            # Build the package
+            DEB_FILENAME="zed-preview_${VERSION}_${ARCH}.deb"
+            dpkg-deb --build --root-owner-group zed-deb-pkg $DEB_FILENAME
+
+            # Add to packages array
+            PACKAGES+=("$DEB_FILENAME")
+
+            echo "Created package: $DEB_FILENAME"
+
+            # Go back to downloads directory for next file
+            cd temp_download
+          done
+
+          # Save packages list to environment variable (comma separated)
+          echo "DEB_PACKAGES=$(IFS=,; echo "${PACKAGES[*]}")" >> $GITHUB_ENV
+          cd ..
+
+      - name: Create GitHub Release
+        if: ${{ env.SHOULD_BUILD == 'true' }}
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.LATEST_PRERELEASE }}
+          name: "Zed Debian Packages for ${{ env.LATEST_PRERELEASE }}"
+          body: "Debian packages for Zed Editor, source: https://github.com/zed-industries/zed/releases/tag/${{ env.LATEST_PRERELEASE }}"
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+          files: |
+            *.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup
+        if: ${{ env.SHOULD_BUILD == 'true' }}
+        run: |
+          rm -rf temp_download
+          rm -rf temp_extract
+          rm -rf zed-deb-pkg
+          rm -f *.deb

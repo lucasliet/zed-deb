@@ -1,0 +1,26 @@
+# Build artifacts
+*.deb
+zed-deb-pkg/
+app_extract/
+temp_extract/
+
+# Temporary files
+temp_download/
+temp/
+
+# Downloaded and extracted Zed application files
+zed-*.tar.gz
+zed-*.zip
+zed-linux-*/
+
+# Backup files
+*~
+*.bak
+*.swp
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
