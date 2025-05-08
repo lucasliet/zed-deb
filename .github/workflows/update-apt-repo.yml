@@ -236,9 +236,9 @@ jobs:
           # Sign the Release file
           echo "Signing Release file with GPG key: $GPG_KEY_ID"
           # Create detached signature
-          gpg --default-key $GPG_KEY_ID -abs -o Release.gpg Release
+          gpg --yes --batch --no-tty --pinentry-mode loopback --default-key $GPG_KEY_ID -abs -o Release.gpg Release
           # Create inline signature (InRelease)
-          gpg --default-key $GPG_KEY_ID --clearsign -o InRelease Release
+          gpg --yes --batch --no-tty --pinentry-mode loopback --default-key $GPG_KEY_ID --clearsign -o InRelease Release
 
           # Create index.html with repository instructions
           cd ../..
