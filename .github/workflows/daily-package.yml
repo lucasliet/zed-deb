@@ -12,14 +12,11 @@ jobs:
   package-zed:
     name: Package Zed
     runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.get_release.outputs.should_build }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y curl jq dpkg-dev fakeroot
 
       - name: Get latest pre-release
         id: get_release
@@ -32,10 +29,10 @@ jobs:
           LATEST_REPO_RELEASE=$(curl -s https://api.github.com/repos/lucasliet/zed-deb/releases/latest | jq -r '.tag_name // empty')
           echo "Latest repo release: $LATEST_REPO_RELEASE"
 
-          # Set SHOULD_BUILD flag
+          # Set should_build flag
           if [ -z "$LATEST_REPO_RELEASE" ]; then
             # No releases in the repo yet, we should build
-            echo "SHOULD_BUILD=true" >> $GITHUB_ENV
+            echo "should_build=true" >> $GITHUB_OUTPUT
             echo "No existing releases found. Will build new package."
           elif [ "$LATEST_REPO_RELEASE" != "$LATEST_PRERELEASE" ]; then
             # Compare versions without the 'v' prefix
@@ -45,19 +42,23 @@ jobs:
             # Use sort -V for version comparison
             if [ "$(printf '%s\n' "$REPO_VER" "$ZED_VER" | sort -V | head -n1)" != "$ZED_VER" ]; then
               # ZED_VER is newer than REPO_VER
-              echo "SHOULD_BUILD=true" >> $GITHUB_ENV
+              echo "should_build=true" >> $GITHUB_OUTPUT
               echo "New version found: $ZED_VER > $REPO_VER. Will build new package."
             else
-              echo "SHOULD_BUILD=false" >> $GITHUB_ENV
               echo "No new version found. Skipping build."
             fi
           else
-            echo "SHOULD_BUILD=false" >> $GITHUB_ENV
             echo "Version $LATEST_PRERELEASE already built. Skipping build."
           fi
 
+      - name: Install dependencies
+        if: ${{ steps.get_release.outputs.should_build }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq dpkg-dev fakeroot
+
       - name: Download and Package Linux Assets
-        if: ${{ env.SHOULD_BUILD == 'true' }}
+        if: ${{ steps.get_release.outputs.should_build }}
         run: |
           mkdir -p temp_download
           cd temp_download
@@ -181,7 +182,7 @@ jobs:
           cd ..
 
       - name: Create GitHub Release
-        if: ${{ env.SHOULD_BUILD == 'true' }}
+        if: ${{ steps.get_release.outputs.should_build }}
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
@@ -197,7 +198,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cleanup
-        if: ${{ env.SHOULD_BUILD == 'true' }}
+        if: ${{ steps.get_release.outputs.should_build == 'true' }}
         run: |
           rm -rf temp_download
           rm -rf temp_extract
@@ -207,5 +208,5 @@ jobs:
   publish-apt:
     name: Publish APT Repository
     needs: [package-zed]
-    if: ${{ env.SHOULD_BUILD == 'true' }}
+    if: ${{ needs.package-zed.outputs.should_build }}
     uses: ./.github/workflows/update-apt-repo.yml
