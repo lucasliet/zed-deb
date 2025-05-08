@@ -2,7 +2,7 @@ name: Daily Zed Pre-release Packaging
 
 on:
   schedule:
-    - cron: "0 0 */3 * *" # Run every third day at midnight UTC
+    - cron: "0 0 * * *" # Run every day at midnight UTC
   workflow_dispatch: # Allow manual triggering
 
 permissions:
@@ -10,10 +10,11 @@ permissions:
 
 jobs:
   package-zed:
+    name: Package Zed
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
@@ -202,3 +203,9 @@ jobs:
           rm -rf temp_extract
           rm -rf zed-deb-pkg
           rm -f *.deb
+
+  publish-apt:
+    name: Publish APT Repository
+    needs: [package-zed]
+    if: ${{ env.SHOULD_BUILD == 'true' }}
+    uses: ./.github/workflows/update-apt-repo.yml

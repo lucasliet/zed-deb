@@ -1,10 +1,12 @@
 name: Update APT Repository
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
   workflow_call:
+
+# Define environment variables
+env:
+  GPG_KEY_ID: "ZED_DEB_SIGNER"
 
 jobs:
   update-repo:
@@ -42,8 +44,46 @@ jobs:
       - name: Install APT Repository Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y dpkg-dev apt-utils curl
+          sudo apt-get install -y dpkg-dev apt-utils curl gnupg
           which apt-ftparchive || sudo apt-get install -y apt
+
+      - name: Setup GPG Key
+        run: |
+          # Create GPG directory
+          mkdir -p ~/.gnupg
+          chmod 700 ~/.gnupg
+
+          # Create GPG key from secret if provided
+          if [ -n "${{ secrets.APT_SIGNING_KEY }}" ]; then
+            echo "Using provided GPG key"
+            echo "${{ secrets.APT_SIGNING_KEY }}" | gpg --batch --import
+            # Get the key ID for later use
+            export GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | grep sec | awk '{print $2}' | cut -d'/' -f2)
+            echo "GPG_KEY_ID=$GPG_KEY_ID" >> $GITHUB_ENV
+          else
+            echo "No GPG key provided, generating temporary one"
+            # Generate a temporary GPG key for signing
+            cat > /tmp/gpg-gen-key << EOF
+          %echo Generating a GPG key for Zed Debian Repository
+          Key-Type: RSA
+          Key-Length: 4096
+          Name-Real: Zed Debian Repository Signing Key
+          Name-Email: zed-deb-signer@github.com
+          Expire-Date: 0
+          %no-protection
+          %commit
+          %echo Done
+          EOF
+            gpg --batch --gen-key /tmp/gpg-gen-key
+            export GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | grep sec | awk '{print $2}' | cut -d'/' -f2)
+            echo "GPG_KEY_ID=$GPG_KEY_ID" >> $GITHUB_ENV
+            rm /tmp/gpg-gen-key
+          fi
+
+          # Export the public key to include in the repository
+          gpg --armor --export $GPG_KEY_ID > apt-repo/dists/stable/pubkey.asc
+
+          echo "GPG Key setup complete with ID: $GPG_KEY_ID"
 
       - name: Create Repository Structure
         run: |
@@ -75,14 +115,14 @@ jobs:
               repo: repo.repo,
               per_page: 1
             });
-            
+
             if (releases.data.length === 0) {
               return;
             }
-            
+
             const release = releases.data[0];
             console.log(`Processing release: ${release.tag_name}`);
-            
+
             for (const asset of release.assets) {
               if (asset.name.endsWith('.deb')) {
                 console.log(`Downloading asset: ${asset.name}`);
@@ -90,7 +130,7 @@ jobs:
                 const path = require('path');
                 const { exec } = require('child_process');
                 const outputPath = `apt-repo/pool/main/z/${asset.name}`;
-                
+
                 try {
                   // Download the asset using the GitHub API with authentication
                   const response = await github.rest.repos.getReleaseAsset({
@@ -101,13 +141,13 @@ jobs:
                       accept: 'application/octet-stream'
                     }
                   });
-                  
+
                   // Save the asset to disk
                   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
                   fs.writeFileSync(outputPath, Buffer.from(response.data));
-                  
+
                   console.log(`Successfully downloaded ${asset.name}`);
-                  
+
                   // Verify the downloaded package
                   await new Promise((resolve, reject) => {
                     exec(`dpkg-deb --info "${outputPath}"`, (error, stdout, stderr) => {
@@ -126,7 +166,7 @@ jobs:
                   console.log(`Trying alternative download method for ${asset.name}...`);
                   try {
                     await new Promise((resolve, reject) => {
-                      exec(`curl -L -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" --retry 3 --retry-delay 3 -o "${outputPath}" "${asset.browser_download_url}"`, 
+                      exec(`curl -L -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" --retry 3 --retry-delay 3 -o "${outputPath}" "${asset.browser_download_url}"`,
                         (error, stdout, stderr) => {
                           if (error) {
                             console.error(`Download error: ${error.message}`);
@@ -148,34 +188,34 @@ jobs:
       - name: Generate APT Repository Metadata
         run: |
           cd apt-repo
-          
+
           # List all files in pool directory for debugging
           echo "Contents of pool directory:"
           find pool -type f -ls
-          
+
           # Verify packages first
           echo "Verifying packages..."
           find pool/main/z -name "*.deb" -exec dpkg-deb --info {} \; || echo "Warning: Some packages may be corrupted"
-          
+
           # Print file sizes for .deb packages
           echo "Package file sizes:"
           find pool/main/z -name "*.deb" -exec ls -lh {} \;
-          
+
           # Generate Packages files for each architecture with error handling
           echo "Generating package metadata for amd64..."
           mkdir -p dists/stable/main/binary-amd64
           dpkg-scanpackages --arch amd64 pool/ > dists/stable/main/binary-amd64/Packages || exit 1
           gzip -k -f dists/stable/main/binary-amd64/Packages
-          
+
           echo "Generating package metadata for arm64..."
           mkdir -p dists/stable/main/binary-arm64
           dpkg-scanpackages --arch arm64 pool/ > dists/stable/main/binary-arm64/Packages || exit 1
           gzip -k -f dists/stable/main/binary-arm64/Packages
-          
+
           # Generate Release file
           echo "Generating Release file..."
           cd dists/stable
-          
+
           if command -v apt-ftparchive >/dev/null 2>&1; then
             echo "Using apt-ftparchive to generate Release file"
             apt-ftparchive release . > Release
@@ -193,6 +233,13 @@ jobs:
           EOF
           fi
 
+          # Sign the Release file
+          echo "Signing Release file with GPG key: $GPG_KEY_ID"
+          # Create detached signature
+          gpg --default-key $GPG_KEY_ID -abs -o Release.gpg Release
+          # Create inline signature (InRelease)
+          gpg --default-key $GPG_KEY_ID --clearsign -o InRelease Release
+
           # Create index.html with repository instructions
           cd ../..
           cat > index.html << EOF
@@ -207,12 +254,21 @@ jobs:
           </head>
           <body>
             <h1>Zed Editor Preview APT Repository</h1>
-            <p>This is an unofficial APT repository for Zed Editor Preview builds.</p>
+            <p>This is an unofficial, unsigned APT repository for Zed Editor Preview builds.</p>
 
             <h2>How to use this repository</h2>
             <p>Add the repository to your sources list:</p>
             <pre>
-          echo "deb [trusted=yes] https://${{ github.repository_owner }}.github.io/zed-deb stable main" | sudo tee /etc/apt/sources.list.d/zed-preview.list
+          # Add the repository
+          echo "deb https://${{ github.repository_owner }}.github.io/zed-deb stable main" | sudo tee /etc/apt/sources.list.d/zed-preview.list
+
+          # Import the GPG key
+          curl -fsSL https://${{ github.repository_owner }}.github.io/zed-deb/dists/stable/pubkey.asc | sudo gpg --dearmor -o /usr/share/keyrings/zed-preview-archive-keyring.gpg
+
+          # Update the repository to use the keyring
+          echo "deb [signed-by=/usr/share/keyrings/zed-preview-archive-keyring.gpg] https://${{ github.repository_owner }}.github.io/zed-deb stable main" | sudo tee /etc/apt/sources.list.d/zed-preview.list
+
+          # Update package lists
           sudo apt update
             </pre>
 
@@ -240,37 +296,3 @@ jobs:
           git add .
           git commit -m "Update APT repository with latest packages" || echo "No changes to commit"
           git push
-
-      - name: Upload artifact for deployment job
-        uses: actions/upload-artifact@v4
-        with:
-          name: pages-artifact
-          path: apt-repo
-
-  deploy-pages:
-    needs: update-repo
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: pages-artifact
-          path: apt-repo
-
-      - name: Setup GitHub Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: "apt-repo"
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
