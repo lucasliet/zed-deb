@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Zed Editor Preview APT Repository</title>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 20px; }
+    pre { background: #f4f4f4; padding: 10px; border-radius: 5px; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>Zed Editor Preview APT Repository</h1>
+  <p>This is an unofficial APT repository for Zed Editor Preview builds.</p>
+
+  <h2>How to use this repository</h2>
+  <p>Add the repository to your sources list:</p>
+  <pre>
+echo "deb [trusted=yes] https://lucasliet.github.io/zed-deb stable main" | sudo tee /etc/apt/sources.list.d/zed-preview.list
+sudo apt update
+  </pre>
+
+  <p>Install Zed Preview:</p>
+  <pre>
+sudo apt install zed-preview
+  </pre>
+
+  <h2>Available Packages</h2>
+  <ul>
+    <li><strong>zed-preview</strong> - Latest pre-release version of Zed Editor</li>
+  </ul>
+
+  <h2>Source</h2>
+  <p>The source code for this repository is available at <a href="https://github.com/lucasliet/zed-deb">github.com/lucasliet/zed-deb</a></p>
+</body>
+</html>

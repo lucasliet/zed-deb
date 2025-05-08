@@ -1,0 +1,6 @@
+Origin: Zed Editor Preview
+Label: Zed Preview
+Codename: stable
+Architectures: amd64 arm64
+Components: main
+Description: Unofficial Debian packages for Zed Editor Preview builds

@@ -1,0 +1,14 @@
+Package: zed-preview
+Version: 0.186.3-pre
+Architecture: arm64
+Maintainer: Zed Industries <support@zed.dev>
+Filename: pool/main/z/zed-preview_0.186.3-pre_arm64.deb
+Size: 69386892
+MD5sum: 4968801280e7950a4ccd2197e7a74595
+SHA1: 19211b04daa0ee3c8b2f2a2bd5fd709b03dc5384
+SHA256: 42e3d9ae598cd63a50d2fee2c78c97ac529479b3f04b893234b524027baa6dae
+Section: editors
+Priority: optional
+Description: Zed Editor Preview
+ A high-performance, multiplayer code editor from the creators of Atom and Tree-sitter.
+
