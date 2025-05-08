@@ -1,0 +1,184 @@
+name: Update APT Repository
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  update-apt-repo:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          ref: gh-pages
+          path: apt-repo
+          fetch-depth: 1
+          persist-credentials: true
+          
+      - name: Create gh-pages branch if it doesn't exist
+        run: |
+          if [ ! -d "apt-repo/.git" ]; then
+            rm -rf apt-repo
+            mkdir -p apt-repo
+            cd apt-repo
+            git init
+            git config user.name "GitHub Actions Bot"
+            git config user.email "actions@github.com"
+            git checkout -b gh-pages
+            touch .nojekyll
+            git add .nojekyll
+            git commit -m "Initialize gh-pages branch"
+            git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}"
+            git push -f origin gh-pages
+            cd ..
+          fi
+
+      - name: Install APT Repository Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev apt-utils
+
+      - name: Create Repository Structure
+        run: |
+          cd apt-repo
+          mkdir -p dists/stable/main/binary-amd64
+          mkdir -p dists/stable/main/binary-arm64
+          mkdir -p pool/main/z
+          
+          # Add a basic repository configuration file
+          mkdir -p conf
+          cat > conf/distributions << EOF
+          Origin: Zed Editor Preview
+          Label: Zed Preview
+          Codename: stable
+          Architectures: amd64 arm64
+          Components: main
+          Description: Unofficial Debian packages for Zed Editor Preview builds
+          EOF
+
+      - name: Get Latest Release Assets
+        id: get_release
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const repo = context.repo;
+            const releases = await github.rest.repos.listReleases({
+              owner: repo.owner,
+              repo: repo.repo,
+              per_page: 1
+            });
+            
+            if (releases.data.length === 0) {
+              return;
+            }
+            
+            const release = releases.data[0];
+            console.log(`Processing release: ${release.tag_name}`);
+            
+            for (const asset of release.assets) {
+              if (asset.name.endsWith('.deb')) {
+                console.log(`Downloading asset: ${asset.name}`);
+                const fs = require('fs');
+                const https = require('https');
+                const file = fs.createWriteStream(`apt-repo/pool/main/z/${asset.name}`);
+                
+                await new Promise((resolve, reject) => {
+                  https.get(asset.browser_download_url, function(response) {
+                    response.pipe(file);
+                    file.on('finish', function() {
+                      file.close(resolve);
+                    });
+                  }).on('error', function(err) {
+                    fs.unlink(dest);
+                    reject(err);
+                  });
+                });
+                
+                console.log(`Downloaded ${asset.name}`);
+              }
+            }
+
+      - name: Generate APT Repository Metadata
+        run: |
+          cd apt-repo
+          
+          # Generate Packages files for each architecture
+          dpkg-scanpackages --arch amd64 pool/ > dists/stable/main/binary-amd64/Packages
+          gzip -k -f dists/stable/main/binary-amd64/Packages
+          
+          dpkg-scanpackages --arch arm64 pool/ > dists/stable/main/binary-arm64/Packages
+          gzip -k -f dists/stable/main/binary-arm64/Packages
+          
+          # Generate Release file
+          cd dists/stable
+          apt-ftparchive release . > Release
+          
+          # Create index.html with repository instructions
+          cd ../..
+          cat > index.html << EOF
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Zed Editor Preview APT Repository</title>
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 20px; }
+              pre { background: #f4f4f4; padding: 10px; border-radius: 5px; overflow-x: auto; }
+            </style>
+          </head>
+          <body>
+            <h1>Zed Editor Preview APT Repository</h1>
+            <p>This is an unofficial APT repository for Zed Editor Preview builds.</p>
+            
+            <h2>How to use this repository</h2>
+            <p>Add the repository to your sources list:</p>
+            <pre>
+          echo "deb [trusted=yes] https://${{ github.repository_owner }}.github.io/zed-deb stable main" | sudo tee /etc/apt/sources.list.d/zed-preview.list
+          sudo apt update
+            </pre>
+            
+            <p>Install Zed Preview:</p>
+            <pre>
+          sudo apt install zed-preview
+            </pre>
+            
+            <h2>Available Packages</h2>
+            <ul>
+              <li><strong>zed-preview</strong> - Latest pre-release version of Zed Editor</li>
+            </ul>
+            
+            <h2>Source</h2>
+            <p>The source code for this repository is available at <a href="https://github.com/${{ github.repository }}">github.com/${{ github.repository }}</a></p>
+          </body>
+          </html>
+          EOF
+
+      - name: Commit and Push APT Repository
+        run: |
+          cd apt-repo
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          git add .
+          git commit -m "Update APT repository with latest packages" || echo "No changes to commit"
+          git push
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v3
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v2
+        with:
+          path: 'apt-repo'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v2
