@@ -259,9 +259,6 @@ jobs:
             <h2>How to use this repository</h2>
             <p>Add the repository to your sources list:</p>
             <pre>
-          # Add the repository
-          echo "deb https://${{ github.repository_owner }}.github.io/zed-deb stable main" | sudo tee /etc/apt/sources.list.d/zed-preview.list
-
           # Import the GPG key
           curl -fsSL https://${{ github.repository_owner }}.github.io/zed-deb/dists/stable/pubkey.asc | sudo gpg --dearmor -o /usr/share/keyrings/zed-preview-archive-keyring.gpg
 

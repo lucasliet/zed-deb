@@ -128,6 +128,40 @@ extract_files() {
   cd ..
 }
 
+# Check and modify desktop file to ensure it has StartupWMClass
+check_desktop_file() {
+  echo "Checking desktop file for StartupWMClass property..."
+  
+  # Find the desktop file (could be in multiple locations)
+  DESKTOP_FILES=$(find zed-deb-pkg -name "*.desktop")
+  
+  if [ -z "$DESKTOP_FILES" ]; then
+    echo "Warning: No .desktop file found in package"
+    return
+  fi
+  
+  for DESKTOP_FILE in $DESKTOP_FILES; do
+    echo "Found desktop file: $DESKTOP_FILE"
+    
+    # Check if StartupWMClass is already present
+    if grep -q "StartupWMClass=" "$DESKTOP_FILE"; then
+      echo "StartupWMClass already exists in $DESKTOP_FILE"
+    else
+      echo "Adding StartupWMClass=dev.zed.Zed-Preview to $DESKTOP_FILE"
+      
+      # Find the [Desktop Entry] section and add the property after it
+      sed -i '/\[Desktop Entry\]/a StartupWMClass=dev.zed.Zed-Preview' "$DESKTOP_FILE"
+      
+      # Verify the addition
+      if grep -q "StartupWMClass=dev.zed.Zed-Preview" "$DESKTOP_FILE"; then
+        echo "Successfully added StartupWMClass property"
+      else
+        echo "Warning: Failed to add StartupWMClass property"
+      fi
+    fi
+  done
+}
+
 # Create DEB package
 create_deb_package() {
   local FILE=$1
@@ -164,6 +198,9 @@ EOF
   echo "Copying all application files to package"
   cp -r app_extract/* zed-deb-pkg/usr/ || { echo "Error copying files from app_extract to package"; exit 1; }
   
+  # Check and modify the desktop file
+  check_desktop_file
+  
   # Build the package
   DEB_FILENAME="zed-preview_${VERSION}_${ARCH}.deb"
   dpkg-deb --build --root-owner-group zed-deb-pkg $DEB_FILENAME
@@ -180,6 +217,7 @@ cleanup() {
   rm -rf temp_download
   rm -rf temp_extract
   rm -rf zed-deb-pkg
+  rm -rf app_extract
 }
 
 # Main execution
@@ -193,4 +231,4 @@ echo "Done! Built the following packages:"
 for pkg in "${CREATED_PACKAGES[@]}"; do
   echo "- $pkg"
 done
-echo "You can install a package with: sudo dpkg -i PACKAGE_NAME.deb"
+echo "You can install a package with: sudo apt install ./PACKAGE_NAME.deb"

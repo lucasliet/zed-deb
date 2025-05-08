@@ -36,9 +36,6 @@ sudo apt install ./zed-preview_x.y.z_amd64.deb
 You can install Zed Preview using our APT repository hosted on GitHub Pages:
 
 ```bash
-# Add the repository
-echo "deb https://lucasliet.github.io/zed-deb stable main" | sudo tee /etc/apt/sources.list.d/zed-preview.list
-
 # Import the GPG key
 curl -fsSL https://lucasliet.github.io/zed-deb/dists/stable/pubkey.asc | sudo gpg --dearmor -o /usr/share/keyrings/zed-preview-archive-keyring.gpg
 
@@ -65,6 +62,10 @@ zed-preview
 ## Automation
 
 This repository uses GitHub Actions to automatically check for new Zed pre-releases every day. If a new pre-release is found, it automatically packages it and publishes a new release. The APT repository is also automatically updated when new packages are released.
+
+## Manual Builds
+
+For instructions on how to manually build the .deb package, for example, if you want to build a package without waiting for the automated daily build, please refer to the [MANUAL-RUN.md](MANUAL-RUN.md) document.
 
 ## Disclaimer
 

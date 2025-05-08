@@ -53,8 +53,7 @@ sudo apt-get install -y curl jq dpkg-dev fakeroot tar unzip
 Install the package with:
 
 ```bash
-sudo dpkg -i zed-preview_*.deb
-sudo apt-get install -f  # To resolve any dependencies
+sudo apt install ./zed-preview_x.y.z_amd64.deb
 ```
 
 ## Troubleshooting
@@ -74,7 +73,3 @@ If there are issues extracting the Zed files, check:
 - The expected file structure may have changed in newer Zed releases
 - Make sure you have sufficient disk space
 - Check file permissions in your working directory
-
-### Building for Different Architectures
-
-The current script only builds for `amd64` architecture. For other architectures, you would need to modify the `Architecture` field in the control file and ensure the downloaded binaries match that architecture.
