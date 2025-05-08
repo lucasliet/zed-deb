@@ -144,10 +144,7 @@ jobs:
 
             # Create package structure
             mkdir -p zed-deb-pkg/DEBIAN
-            mkdir -p zed-deb-pkg/usr/bin
-            mkdir -p zed-deb-pkg/usr/lib/zed
-            mkdir -p zed-deb-pkg/usr/share/applications
-            mkdir -p zed-deb-pkg/usr/share/icons/hicolor/512x512/apps
+            mkdir -p zed-deb-pkg/usr
 
             # Create control file
             cat > zed-deb-pkg/DEBIAN/control << EOF
@@ -161,35 +158,9 @@ jobs:
            A high-performance, multiplayer code editor from the creators of Atom and Tree-sitter.
           EOF
 
-            # Copy application files from the extracted directory
-            echo "Copying application files to package"
-            ls -la app_extract/
-            cp -r app_extract/* zed-deb-pkg/usr/lib/zed/ || { echo "Error copying files from app_extract to package"; exit 1; }
-
-            # Create launcher script
-            cat > zed-deb-pkg/usr/bin/zed-preview << EOF
-          #!/bin/sh
-          exec /usr/lib/zed/bin/zed "\$@"
-          EOF
-            chmod +x zed-deb-pkg/usr/bin/zed-preview
-
-            # Create desktop file
-            cat > zed-deb-pkg/usr/share/applications/zed-preview.desktop << EOF
-          [Desktop Entry]
-          Name=Zed Preview
-          Comment=High-performance, multiplayer code editor
-          Exec=/usr/bin/zed-preview %F
-          Icon=zed-preview
-          Terminal=false
-          Type=Application
-          Categories=Development;TextEditor;
-          MimeType=text/plain;
-          EOF
-
-            # Extract icon from app if available, or use a placeholder
-            if [ -f "app_extract/share/icons/hicolor/512x512/apps/zed.png" ]; then
-              cp "app_extract/share/icons/hicolor/512x512/apps/zed.png" zed-deb-pkg/usr/share/icons/hicolor/512x512/apps/zed-preview.png
-            fi
+            # Copy all application files directly to the package maintaining structure
+            echo "Copying all application files to package"
+            cp -r app_extract/* zed-deb-pkg/usr/ || { echo "Error copying files from app_extract to package"; exit 1; }
 
             # Build the package
             DEB_FILENAME="zed-preview_${VERSION}_${ARCH}.deb"
