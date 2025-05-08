@@ -3,10 +3,10 @@ Version: 0.186.3-pre
 Architecture: amd64
 Maintainer: Zed Industries <support@zed.dev>
 Filename: pool/main/z/zed-preview_0.186.3-pre_amd64.deb
-Size: 71712330
-MD5sum: 999b3ac91c7b9b4111e1bd1dcee16190
-SHA1: 36eebd0bf7cb427790976d535e94105aa71cf97a
-SHA256: c118af407b615197ed0f81ba17f2ecf0ceae1512dd625e4b3cb8bf00ac11a9ff
+Size: 71714104
+MD5sum: 7d40dd75885ffcda56aaf880d8c39034
+SHA1: 3cf0704d88c38536aedde9b477fa1e3437999057
+SHA256: ec3e45cfed6db448639180141b96012baa036f437f09515569fadd28dc7ed0c0
 Section: editors
 Priority: optional
 Description: Zed Editor Preview
