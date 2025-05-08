@@ -9,12 +9,21 @@
 </head>
 <body>
   <h1>Zed Editor Preview APT Repository</h1>
-  <p>This is an unofficial APT repository for Zed Editor Preview builds.</p>
+  <p>This is an unofficial, unsigned APT repository for Zed Editor Preview builds.</p>
 
   <h2>How to use this repository</h2>
   <p>Add the repository to your sources list:</p>
   <pre>
-echo "deb [trusted=yes] https://lucasliet.github.io/zed-deb stable main" | sudo tee /etc/apt/sources.list.d/zed-preview.list
+# Add the repository
+echo "deb https://lucasliet.github.io/zed-deb stable main" | sudo tee /etc/apt/sources.list.d/zed-preview.list
+
+# Import the GPG key
+curl -fsSL https://lucasliet.github.io/zed-deb/dists/stable/pubkey.asc | sudo gpg --dearmor -o /usr/share/keyrings/zed-preview-archive-keyring.gpg
+
+# Update the repository to use the keyring
+echo "deb [signed-by=/usr/share/keyrings/zed-preview-archive-keyring.gpg] https://lucasliet.github.io/zed-deb stable main" | sudo tee /etc/apt/sources.list.d/zed-preview.list
+
+# Update package lists
 sudo apt update
   </pre>
 
