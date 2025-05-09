@@ -3,6 +3,11 @@ name: Update APT Repository
 on:
   workflow_dispatch:
   workflow_call:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/update-apt-repo.yml'
 
 # Define environment variables
 env:
@@ -22,24 +27,6 @@ jobs:
           fetch-depth: 1
           persist-credentials: true
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create gh-pages branch if it doesn't exist
-        run: |
-          if [ ! -d "apt-repo/.git" ]; then
-            rm -rf apt-repo
-            mkdir -p apt-repo
-            cd apt-repo
-            git init
-            git config user.name "GitHub Actions Bot"
-            git config user.email "actions@github.com"
-            git checkout -b gh-pages
-            touch .nojekyll
-            git add .nojekyll
-            git commit -m "Initialize gh-pages branch"
-            git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
-            git push -f origin gh-pages
-            cd ..
-          fi
 
       - name: Install APT Repository Tools
         run: |
@@ -186,6 +173,8 @@ jobs:
             }
 
       - name: Generate APT Repository Metadata
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           cd apt-repo
 
@@ -235,10 +224,20 @@ jobs:
 
           # Sign the Release file
           echo "Signing Release file with GPG key: $GPG_KEY_ID"
-          # Create detached signature
-          gpg --yes --batch --no-tty --pinentry-mode loopback --default-key $GPG_KEY_ID -abs -o Release.gpg Release
-          # Create inline signature (InRelease)
-          gpg --yes --batch --no-tty --pinentry-mode loopback --default-key $GPG_KEY_ID --clearsign -o InRelease Release
+          if [ -n "$GPG_PASSPHRASE" ]; then
+            echo "Using GPG passphrase from GPG_PASSPHRASE secret."
+            # Create detached signature
+            echo "$GPG_PASSPHRASE" | gpg --yes --batch --no-tty --pinentry-mode loopback --passphrase-fd 0 --default-key $GPG_KEY_ID -abs -o Release.gpg Release
+            # Create inline signature (InRelease)
+            echo "$GPG_PASSPHRASE" | gpg --yes --batch --no-tty --pinentry-mode loopback --passphrase-fd 0 --default-key $GPG_KEY_ID --clearsign -o InRelease Release
+          else
+            echo "GPG_PASSPHRASE secret not set. Attempting to sign without passphrase (this will fail if the key requires a passphrase)."
+            # Original commands - will fail if key has a passphrase and no agent is configured
+            # Create detached signature
+            gpg --yes --batch --no-tty --pinentry-mode loopback --default-key $GPG_KEY_ID -abs -o Release.gpg Release
+            # Create inline signature (InRelease)
+            gpg --yes --batch --no-tty --pinentry-mode loopback --default-key $GPG_KEY_ID --clearsign -o InRelease Release
+          fi
 
           # Create index.html with repository instructions
           cd ../..
