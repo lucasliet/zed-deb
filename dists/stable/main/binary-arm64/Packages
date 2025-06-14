@@ -1,12 +1,12 @@
 Package: zed-preview
-Version: 0.191.1-pre
+Version: 0.191.2-pre
 Architecture: arm64
 Maintainer: Zed Industries <support@zed.dev>
-Filename: pool/main/z/zed-preview_0.191.1-pre_arm64.deb
-Size: 72417096
-MD5sum: e975e285ffd53dfee44a56e4b06ba3e7
-SHA1: 43e8a7d4eddfb1cd214e1c63e23fbea2ef3f3424
-SHA256: 803f92f722df553e9476d09daaea530321024cf1f3db08eb5a33ab94dfb35a8a
+Filename: pool/main/z/zed-preview_0.191.2-pre_arm64.deb
+Size: 73070494
+MD5sum: ba392298fc5d87c254260ec583721be9
+SHA1: 370cd45a81ff232ea03f77b2a75209a0a3dd602b
+SHA256: 71762d1c0029df7e130466f294f7693b543fa339de526c0f5449c3e48bd0d03d
 Section: editors
 Priority: optional
 Description: Zed Editor Preview
